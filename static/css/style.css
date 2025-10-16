@@ -1,0 +1,345 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.container {
+    max-width: 1000px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+    padding: 40px;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+header h1 {
+    color: #333;
+    font-size: 32px;
+    margin-bottom: 10px;
+}
+
+header p {
+    color: #666;
+    font-size: 16px;
+    margin-bottom: 15px;
+}
+
+.stats {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 15px;
+}
+
+.stats span {
+    padding: 8px 16px;
+    background: #f0f1ff;
+    border-radius: 20px;
+    font-size: 14px;
+    color: #667eea;
+    font-weight: 600;
+}
+
+.upload-section {
+    margin-bottom: 40px;
+}
+
+.file-input-wrapper {
+    position: relative;
+    margin-bottom: 20px;
+}
+
+#fileInput {
+    display: none;
+}
+
+label[for="fileInput"] {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    border: 3px dashed #667eea;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: #f8f9ff;
+}
+
+label[for="fileInput"]:hover {
+    border-color: #764ba2;
+    background: #f0f1ff;
+}
+
+label[for="fileInput"] .icon {
+    font-size: 48px;
+    margin-bottom: 10px;
+}
+
+#fileName {
+    color: #666;
+    font-size: 16px;
+    margin-bottom: 5px;
+}
+
+.hint {
+    color: #999;
+    font-size: 12px;
+}
+
+#submitBtn, .btn-export, .btn-reset {
+    width: 100%;
+    padding: 15px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+#submitBtn:hover, .btn-export:hover, .btn-reset:hover {
+    transform: translateY(-2px);
+}
+
+#submitBtn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.loading {
+    text-align: center;
+    padding: 40px;
+}
+
+.spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #667eea;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.hidden {
+    display: none !important;
+}
+
+.results {
+    animation: fadeIn 0.5s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.results-header h2 {
+    color: #333;
+}
+
+.company-badge {
+    padding: 8px 16px;
+    background: #667eea;
+    color: white;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.confidence-indicator {
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.confidence-high {
+    background: #4caf50;
+    color: white;
+}
+
+.confidence-medium {
+    background: #ff9800;
+    color: white;
+}
+
+.confidence-low {
+    background: #f44336;
+    color: white;
+}
+
+.data-grid {
+    display: grid;
+    gap: 15px;
+    margin-bottom: 30px;
+}
+
+.data-item {
+    background: #f8f9ff;
+    padding: 15px;
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.data-item label {
+    font-weight: 600;
+    color: #333;
+}
+
+.data-item span {
+    color: #666;
+    text-align: right;
+    max-width: 60%;
+    word-break: break-word;
+}
+
+.action-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+}
+
+.error {
+    text-align: center;
+    padding: 30px;
+    background: #fee;
+    border-radius: 8px;
+    color: #c33;
+}
+
+.error button {
+    margin-top: 20px;
+    padding: 10px 30px;
+    background: #c33;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.records-section {
+    margin-top: 40px;
+    padding-top: 40px;
+    border-top: 2px solid #eee;
+}
+
+.records-section h3 {
+    margin-bottom: 20px;
+    color: #333;
+}
+
+.filter-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.tab {
+    padding: 10px 20px;
+    border: 2px solid #667eea;
+    background: white;
+    color: #667eea;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.tab.active, .tab:hover {
+    background: #667eea;
+    color: white;
+}
+
+#recordsList {
+    display: grid;
+    gap: 10px;
+}
+
+.record-item {
+    padding: 15px;
+    background: #f8f9ff;
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.record-info {
+    flex: 1;
+}
+
+.record-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.record-actions button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.needs-review-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    background: #ff9800;
+    color: white;
+    border-radius: 12px;
+    font-size: 12px;
+    margin-left: 10px;
+}
+
+@media (max-width: 600px) {
+    .container {
+        padding: 20px;
+    }
+    
+    header h1 {
+        font-size: 24px;
+    }
+    
+    .data-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    .data-item span {
+        max-width: 100%;
+        text-align: left;
+    }
+}

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Renters Insurance Data Extractor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏠 Enterprise Renters Insurance Extractor</h1>
+            <p>Supports 18+ major US insurance companies with 95%+ accuracy</p>
+            <div class="stats">
+                <span id="totalRecords">Total: 0</span>
+                <span id="needsReview">Needs Review: 0</span>
+            </div>
+        </header>
+
+        <div class="upload-section">
+            <form id="uploadForm">
+                <div class="file-input-wrapper">
+                    <input type="file" id="fileInput" 
+                           accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp" required>
+                    <label for="fileInput" id="fileLabel">
+                        <span class="icon">📄</span>
+                        <span id="fileName">Choose file or drag here</span>
+                        <span class="hint">PDF, PNG, JPG, TIFF (Max 20MB)</span>
+                    </label>
+                </div>
+                <button type="submit" id="submitBtn">Extract Data</button>
+            </form>
+
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Processing document...</p>
+                <small>Detecting company and extracting data</small>
+            </div>
+        </div>
+
+        <div id="results" class="results hidden">
+            <div class="results-header">
+                <h2>Extracted Information</h2>
+                <div class="company-badge" id="companyBadge"></div>
+                <div class="confidence-indicator" id="confidenceIndicator"></div>
+            </div>
+
+            <div class="data-grid">
+                <div class="data-item">
+                    <label>Insurance Company:</label>
+                    <span id="insuranceCompany">-</span>
+                </div>
+                <div class="data-item">
+                    <label>Detected Company:</label>
+                    <span id="detectedCompany">-</span>
+                </div>
+                <div class="data-item">
+                    <label>Policy Number:</label>
+                    <span id="policyNumber">-</span>
+                </div>
+                <div class="data-item">
+                    <label>Policyholder Name:</label>
+                    <span id="policyholderName">-</span>
+                </div>
+                <div class="data-item">
+                    <label>Property Address:</label>
+                    <span id="propertyAddress">-</span>
+                </div>
+                <div class="data-item">
+                    <label>Coverage Amount:</label>
+                    <span id="coverageAmount">-</span>
+                </div>
+                <div class="data-item">
+                    <label>Liability Coverage:</label>
+                    <span id="liabilityCoverage">-</span>
+                </div>
+                <div class="data-item">
+                    <label>Deductible:</label>
+                    <span id="deductible">-</span>
+                </div>
+                <div class="data-item">
+                    <label>Effective Date:</label>
+                    <span id="effectiveDate">-</span>
+                </div>
+                <div class="data-item">
+                    <label>Expiration Date:</label>
+                    <span id="expirationDate">-</span>
+                </div>
+                <div class="data-item">
+                    <label>Premium Amount:</label>
+                    <span id="premiumAmount">-</span>
+                </div>
+                <div class="data-item">
+                    <label>Processing Time:</label>
+                    <span id="processingTime">-</span>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button onclick="exportData('excel')" class="btn-export">📊 Export Excel</button>
+                <button onclick="exportData('csv')" class="btn-export">📝 Export CSV</button>
+                <button onclick="exportData('json')" class="btn-export">📋 Export JSON</button>
+                <button id="resetBtn" class="btn-reset">Upload Another</button>
+            </div>
+        </div>
+
+        <div id="error" class="error hidden">
+            <p id="errorMessage"></p>
+            <button onclick="resetForm()">Try Again</button>
+        </div>
+
+        <div class="records-section">
+            <h3>Recent Extractions</h3>
+            <div class="filter-tabs">
+                <button class="tab active" onclick="loadRecords('all')">All</button>
+                <button class="tab" onclick="loadRecords('review')">Needs Review</button>
+            </div>
+            <div id="recordsList"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+"""
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./exports:/app/exports
+      - ./insurance.db:/app/insurance.db
+    environment:
+      - DATABASE_URL=sqlite:///./insurance.db
+"""
