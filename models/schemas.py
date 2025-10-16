@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 
@@ -17,6 +17,14 @@ class InsuranceDataResponse(BaseModel):
     confidence_score: float = Field(default=0.0, ge=0, le=100)
     processing_time: Optional[float] = None
     needs_review: bool = False
+    
+    @field_validator('confidence_score')
+    @classmethod
+    def validate_confidence(cls, v):
+        """Ensure confidence is always between 0 and 100."""
+        if v is None:
+            return 0.0
+        return max(0.0, min(100.0, float(v)))
 
 class UploadResponse(BaseModel):
     success: bool

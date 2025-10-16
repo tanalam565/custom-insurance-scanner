@@ -40,6 +40,9 @@ class CompanyDetector:
             'patterns': [
                 r'Nationwide',
                 r'nationwide\.com',
+                r'NATIONWIDE\s+MUTUAL\s+INSURANCE',
+                r'NATIONWIDE\s+24-HOUR\s+CLAIM',
+                r'TENANT\s+CUSTOMER\s+NOTICE',  # Specific to this doc type
             ],
             'confidence': 0.95
         },
