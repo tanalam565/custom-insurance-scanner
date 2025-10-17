@@ -1,160 +1,122 @@
-import re
-from typing import Tuple
-import logging
-
-logger = logging.getLogger(__name__)
+from core.image_processor import ImageProcessor
+from core.ocr_engine import OCREngine
+from config import Config
 
 class CompanyDetector:
-    COMPANY_PATTERNS = {
-        'state_farm': {
-            'patterns': [
-                r'State\s*Farm',
-                r'statefarm\.com',
-                r'Like\s*a\s*good\s*neighbor',
-            ],
-            'confidence': 0.95
-        },
-        'allstate': {
-            'patterns': [
-                r'Allstate',
-                r'allstate\.com',
-                r'You\'re\s*in\s*good\s*hands',
-            ],
-            'confidence': 0.95
-        },
-        'progressive': {
-            'patterns': [
-                r'Progressive',
-                r'progressive\.com',
-            ],
-            'confidence': 0.95
-        },
-        'usaa': {
-            'patterns': [
-                r'USAA',
-                r'usaa\.com',
-            ],
-            'confidence': 0.95
-        },
-        'nationwide': {
-            'patterns': [
-                r'Nationwide',
-                r'nationwide\.com',
-                r'NATIONWIDE\s+MUTUAL\s+INSURANCE',
-                r'NATIONWIDE\s+24-HOUR\s+CLAIM',
-                r'TENANT\s+CUSTOMER\s+NOTICE',  # Specific to this doc type
-            ],
-            'confidence': 0.95
-        },
-        'travelers': {
-            'patterns': [
-                r'Travelers',
-                r'travelers\.com',
-            ],
-            'confidence': 0.95
-        },
-        'liberty_mutual': {
-            'patterns': [
-                r'Liberty\s*Mutual',
-                r'libertymutual\.com',
-            ],
-            'confidence': 0.95
-        },
-        'farmers': {
-            'patterns': [
-                r'Farmers\s*Insurance',
-                r'farmers\.com',
-            ],
-            'confidence': 0.95
-        },
-        'geico': {
-            'patterns': [
-                r'GEICO',
-                r'geico\.com',
-            ],
-            'confidence': 0.95
-        },
-        'american_family': {
-            'patterns': [
-                r'American\s*Family',
-                r'amfam\.com',
-            ],
-            'confidence': 0.95
-        },
-        'erie': {
-            'patterns': [
-                r'Erie\s*Insurance',
-                r'erieinsurance\.com',
-            ],
-            'confidence': 0.95
-        },
-        'amica': {
-            'patterns': [
-                r'Amica\s*Mutual',
-                r'amica\.com',
-            ],
-            'confidence': 0.95
-        },
-        'csaa': {
-            'patterns': [
-                r'CSAA\s*Insurance',
-                r'AAA\s*Insurance',
-                r'csaa-ig\.com',
-            ],
-            'confidence': 0.95
-        },
-        'chubb': {
-            'patterns': [
-                r'Chubb',
-                r'chubb\.com',
-            ],
-            'confidence': 0.95
-        },
-        'hartford': {
-            'patterns': [
-                r'The\s*Hartford',
-                r'thehartford\.com',
-            ],
-            'confidence': 0.95
-        },
-        'country_financial': {
-            'patterns': [
-                r'Country\s*Financial',
-                r'countryfinancial\.com',
-            ],
-            'confidence': 0.95
-        },
-        'lemonade': {
-            'patterns': [
-                r'Lemonade\s*Insurance',
-                r'lemonade\.com',
-            ],
-            'confidence': 0.95
-        },
-        'hanover': {
-            'patterns': [
-                r'The\s*Hanover',
-                r'hanover\.com',
-            ],
-            'confidence': 0.95
-        },
-    }
+    """Detects insurance company from document"""
     
-    @staticmethod
-    def detect_company(text: str) -> Tuple[str, float]:
-        text_sample = text[:2000]
-        best_match = ('generic', 0.0)
+    def __init__(self):
+        self.processor = ImageProcessor()
+        self.ocr = OCREngine()
         
-        for company, data in CompanyDetector.COMPANY_PATTERNS.items():
-            match_count = 0
-            for pattern in data['patterns']:
-                if re.search(pattern, text_sample, re.IGNORECASE):
-                    match_count += 1
+        # Define detection regions (top portion of document usually has company name)
+        self.header_regions = [
+            (0, 0, 800, 100),      # Top header
+            (100, 20, 200, 60),    # Top left logo area
+            (0, 0, 400, 150),      # Extended top left
+        ]
+        
+        # Company name variations and keywords
+        self.company_keywords = {
+            'state_farm': ['state farm', 'statefarm', 'state-farm'],
+            'allstate': ['allstate', 'all state'],
+            'progressive': ['progressive'],
+            'usaa': ['usaa', 'u.s.a.a'],
+            'nationwide': ['nationwide'],
+            'travelers': ['travelers', 'traveler'],
+            'liberty_mutual': ['liberty mutual', 'liberty-mutual', 'libertymutual'],
+            'farmers': ['farmers insurance', 'farmers'],
+            'geico': ['geico', 'government employees insurance'],
+            'american_family': ['american family', 'amfam'],
+            'erie': ['erie insurance', 'erie'],
+            'amica': ['amica mutual', 'amica'],
+            'csaa': ['csaa', 'aaa', 'triple a'],
+            'chubb': ['chubb'],
+            'hartford': ['hartford', 'the hartford'],
+            'country_financial': ['country financial', 'countryfinancial'],
+            'lemonade': ['lemonade'],
+            'hanover': ['hanover', 'the hanover'],
+        }
+    
+    def detect_company(self, img):
+        """Detect insurance company from image
+        
+        Args:
+            img: Input image
             
-            if match_count > 0:
-                confidence = data['confidence'] * (match_count / len(data['patterns']))
-                if confidence > best_match[1]:
-                    best_match = (company, confidence)
+        Returns:
+            Tuple of (company_name, confidence_score)
+        """
+        best_match = None
+        best_confidence = 0.0
         
-        logger.info(f"Detected: {best_match[0]} ({best_match[1]:.2f})")
-        return best_match
+        # Try extracting text from different header regions
+        for region in self.header_regions:
+            try:
+                roi = self.processor.extract_roi(img, region)
+                processed = self.processor.preprocess_roi(roi)
+                text = self.ocr.extract_text(processed).lower()
+                
+                # Check for company keywords
+                for company, keywords in self.company_keywords.items():
+                    for keyword in keywords:
+                        if keyword in text:
+                            # Calculate simple confidence based on keyword length match
+                            confidence = len(keyword) / len(text) if text else 0
+                            confidence = min(confidence * 2, 1.0)  # Boost and cap at 1.0
+                            
+                            if confidence > best_confidence:
+                                best_match = company
+                                best_confidence = confidence
+                                
+            except Exception as e:
+                print(f"Error processing region {region}: {e}")
+                continue
+        
+        # If confidence is too low, return generic
+        if best_confidence < Config.COMPANY_DETECTION_THRESHOLD:
+            return 'generic', best_confidence
+        
+        return best_match, best_confidence
+    
+    def detect_from_text(self, text):
+        """Detect company from already extracted text
+        
+        Args:
+            text: Extracted text
+            
+        Returns:
+            Tuple of (company_name, confidence_score)
+        """
+        text_lower = text.lower()
+        best_match = None
+        best_confidence = 0.0
+        
+        for company, keywords in self.company_keywords.items():
+            for keyword in keywords:
+                if keyword in text_lower:
+                    confidence = len(keyword) / len(text_lower) if text_lower else 0
+                    confidence = min(confidence * 2, 1.0)
+                    
+                    if confidence > best_confidence:
+                        best_match = company
+                        best_confidence = confidence
+        
+        if best_confidence < Config.COMPANY_DETECTION_THRESHOLD:
+            return 'generic', best_confidence
+        
+        return best_match, best_confidence
+    
+    def get_extractor_class_name(self, company_name):
+        """Get the extractor class name for a company
+        
+        Args:
+            company_name: Company identifier
+            
+        Returns:
+            Class name string
+        """
+        # Convert snake_case to CamelCase
+        parts = company_name.split('_')
+        class_name = ''.join(word.capitalize() for word in parts) + 'Extractor'
+        return class_name

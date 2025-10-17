@@ -1,30 +1,38 @@
-from pydantic_settings import BaseSettings
-from typing import Optional
+import os
+from pathlib import Path
 
-class Settings(BaseSettings):
-    APP_NAME: str = "Renters Insurance Extractor"
-    APP_VERSION: str = "1.0.0"
-    DEBUG: bool = False
-    HOST: str = "0.0.0.0"
-    PORT: int = 8000
+class Config:
+    """Application configuration"""
     
-    DATABASE_URL: str = "sqlite:///./insurance.db"
+    # Base directory
+    BASE_DIR = Path(__file__).parent
     
-    MAX_FILE_SIZE: int = 20 * 1024 * 1024
-    ALLOWED_EXTENSIONS: set = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.bmp'}
-    UPLOAD_DIR: str = "uploads"
-    EXPORT_DIR: str = "exports"
+    # Upload settings
+    UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', str(BASE_DIR / 'uploads'))
+    EXPORT_FOLDER = os.getenv('EXPORT_FOLDER', str(BASE_DIR / 'exports'))
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf', 'tiff', 'bmp'}
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
     
-    TESSERACT_CMD: Optional[str] = None
-    OCR_DPI: int = 300
-    OCR_LANG: str = "eng"
+    # Tesseract configuration
+    TESSERACT_CMD = os.getenv('TESSERACT_CMD', r'C:\Program Files\Tesseract-OCR\tesseract.exe')
+    TESSERACT_CONFIG = '--psm 6 -l eng'
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-
-settings = Settings()
-
-if settings.TESSERACT_CMD:
-    import pytesseract
-    pytesseract.pytesseract.tesseract_cmd = settings.TESSERACT_CMD
+    # OCR settings
+    ZOOM_FACTOR = 2
+    THRESHOLD_METHOD = 'OTSU'
+    
+    # Database
+    DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///renters_data.db')
+    
+    # Flask settings
+    SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+    DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+    
+    # Company detection confidence threshold
+    COMPANY_DETECTION_THRESHOLD = 0.7
+    
+    @staticmethod
+    def init_app(app):
+        """Initialize application with config"""
+        os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
+        os.makedirs(Config.EXPORT_FOLDER, exist_ok=True)

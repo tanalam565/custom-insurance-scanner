@@ -1,436 +1,247 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
-from pathlib import Path
-import shutil
+from flask import Blueprint, request, jsonify, send_file
+from werkzeug.utils import secure_filename
+import os
 import time
-import logging
-from typing import List, Optional
-from datetime import datetime
+from pathlib import Path
+import importlib
 
-from config import settings
-from models.database import SessionLocal, InsuranceRecord
-from models.schemas import UploadResponse, ExportRequest, InsuranceDataResponse
-from core.ocr_engine import OCREngine
+from core.image_processor import ImageProcessor
 from core.company_detector import CompanyDetector
-from core.template_manager import TemplateManager
-from core.exporter import DataExporter
-from core.validator import DataValidator
+from core.exporter import Exporter
+from models.database import Database
+from config import Config
 
-logger = logging.getLogger(__name__)
-router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+api = Blueprint('api', __name__)
 
 # Initialize components
-ocr_engine = OCREngine()
-company_detector = CompanyDetector()
-template_manager = TemplateManager()
-exporter = DataExporter()
-validator = DataValidator()
+processor = ImageProcessor()
+detector = CompanyDetector()
+exporter = Exporter()
+db = Database()
 
-# Ensure directories exist
-Path(settings.UPLOAD_DIR).mkdir(exist_ok=True)
-Path(settings.EXPORT_DIR).mkdir(exist_ok=True)
+def allowed_file(filename):
+    """Check if file extension is allowed"""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
 
-@router.post("/upload", response_model=UploadResponse)
-async def upload_file(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db)
-):
-    """Upload and process insurance document."""
-    start_time = time.time()
+def get_extractor(company_name):
+    """Dynamically import and instantiate the correct extractor"""
+    try:
+        # Convert company_name to class name
+        parts = company_name.split('_')
+        class_name = ''.join(word.capitalize() for word in parts) + 'Extractor'
+        
+        # Import the module
+        module_name = f'extractors.{company_name}_extractor'
+        module = importlib.import_module(module_name)
+        
+        # Get the class and instantiate
+        extractor_class = getattr(module, class_name)
+        return extractor_class()
+    except Exception as e:
+        print(f"Error loading extractor for {company_name}: {e}")
+        # Fall back to generic extractor
+        from extractors.generic_extractor import GenericExtractor
+        return GenericExtractor()
+
+@api.route('/upload', methods=['POST'])
+def upload_file():
+    """Upload and process insurance document"""
     
-    # Validate file extension
-    file_ext = Path(file.filename).suffix.lower()
-    if file_ext not in settings.ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file type. Allowed: {', '.join(settings.ALLOWED_EXTENSIONS)}"
-        )
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
     
-    # Check file size
-    file.file.seek(0, 2)
-    file_size = file.file.tell()
-    file.file.seek(0)
+    file = request.files['file']
     
-    if file_size > settings.MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Max size: {settings.MAX_FILE_SIZE / 1024 / 1024}MB"
-        )
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
     
-    file_path = Path(settings.UPLOAD_DIR) / file.filename
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'Invalid file type'}), 400
     
     try:
         # Save uploaded file
-        with file_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        filename = secure_filename(file.filename)
+        filepath = Path(Config.UPLOAD_FOLDER) / filename
+        file.save(filepath)
         
-        logger.info(f"Processing: {file.filename}")
+        # Start timing
+        start_time = time.time()
         
-        # Step 1: Extract text using OCR
-        text = ocr_engine.extract_text(str(file_path), file_ext)
+        # Load and process image
+        img = processor.load_image(filepath)
         
-        # Step 2: Detect insurance company
-        company_name, detection_confidence = company_detector.detect_company(text)
+        # Detect company
+        company_name, confidence = detector.detect_company(img)
         
-        # Step 3: Get appropriate extractor
-        extractor = template_manager.get_extractor(company_name, detection_confidence)
+        # Get appropriate extractor
+        extractor = get_extractor(company_name)
         
-        # Step 4: Extract data
-        extracted_data = extractor.extract(text)
+        # Extract data
+        extracted_data = extractor.extract_all_fields(img)
         
-        # Step 5: Validate extracted data
-        validation_results = validator.validate_all(extracted_data)
+        # Post-process
+        extracted_data = extractor.post_process(extracted_data)
         
-        # Step 6: Determine if needs review
-        needs_review = validator.should_flag_for_review(extracted_data, validation_results)
+        # Validate
+        is_valid, errors = extractor.validate_extraction(extracted_data)
         
         # Calculate processing time
         processing_time = time.time() - start_time
         
-        # Step 7: Save to database
-        record = InsuranceRecord(
-            filename=file.filename,
-            policy_number=extracted_data.get('policy_number'),
-            policyholder_name=extracted_data.get('policyholder_name'),
-            property_address=extracted_data.get('property_address'),
-            coverage_amount=extracted_data.get('coverage_amount'),
-            liability_coverage=extracted_data.get('liability_coverage'),
-            deductible=extracted_data.get('deductible'),
-            effective_date=extracted_data.get('effective_date'),
-            expiration_date=extracted_data.get('expiration_date'),
-            premium_amount=extracted_data.get('premium_amount'),
-            insurance_company=extracted_data.get('insurance_company'),
-            detected_company=extracted_data.get('detected_company'),
-            confidence_score=extracted_data.get('confidence_score'),
-            raw_text=extracted_data.get('raw_text_preview'),
-            processing_time=processing_time,
-            needs_review=1 if needs_review else 0
-        )
+        # Prepare database record
+        db_data = {
+            'filename': filename,
+            'insurance_company': extracted_data.get('insurance_company', company_name),
+            'company_confidence': confidence,
+            'policy_number': extracted_data.get('policy_number', ''),
+            'date_prepared': extracted_data.get('date_prepared', ''),
+            'effective_date': extracted_data.get('effective_date', ''),
+            'expiration_date': extracted_data.get('expiration_date', ''),
+            'insurer_name': extracted_data.get('insurer_name', ''),
+            'insurer_address': extracted_data.get('insurer_address', ''),
+            'insurer_city_state': extracted_data.get('insurer_city_state', ''),
+            'property_address': extracted_data.get('property_address', ''),
+            'insurance_amount': extracted_data.get('insurance_amount', ''),
+            'extraction_status': 'success' if is_valid else 'warning',
+            'error_message': ', '.join(errors) if errors else None,
+            'processing_time': processing_time
+        }
         
-        db.add(record)
-        db.commit()
-        db.refresh(record)
-        
-        # Clean up uploaded file
-        file_path.unlink()
+        # Save to database
+        record_id = db.save_extraction(db_data)
         
         # Prepare response
-        response_data = InsuranceDataResponse(
-            **{k: v for k, v in extracted_data.items() if k != 'raw_text_preview'},
-            processing_time=processing_time,
-            needs_review=needs_review
-        )
+        response = {
+            'success': True,
+            'record_id': record_id,
+            'company': company_name,
+            'confidence': confidence,
+            'data': extracted_data,
+            'is_valid': is_valid,
+            'validation_errors': errors,
+            'processing_time': processing_time
+        }
         
-        message = "File processed successfully"
-        if needs_review:
-            message += " - Flagged for review"
-        if validation_results['warnings']:
-            message += f" ({len(validation_results['warnings'])} warnings)"
-        
-        return UploadResponse(
-            success=True,
-            message=message,
-            filename=file.filename,
-            data=response_data,
-            record_id=record.id
-        )
+        return jsonify(response), 200
         
     except Exception as e:
-        logger.error(f"Processing failed: {e}")
-        if file_path.exists():
-            file_path.unlink()
-        raise HTTPException(status_code=500, detail=str(e))
+        return jsonify({'error': str(e)}), 500
 
-
-@router.post("/export")
-async def export_data(request: ExportRequest, db: Session = Depends(get_db)):
-    """Export extracted data in specified format."""
+@api.route('/records', methods=['GET'])
+def get_records():
+    """Get all extraction records"""
     try:
-        # Get records
-        if request.record_ids:
-            records = db.query(InsuranceRecord).filter(
-                InsuranceRecord.id.in_(request.record_ids)
-            ).all()
+        limit = request.args.get('limit', 100, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        
+        records = db.get_all_extractions(limit=limit, offset=offset)
+        
+        return jsonify({
+            'success': True,
+            'count': len(records),
+            'records': [record.to_dict() for record in records]
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@api.route('/records/<int:record_id>', methods=['GET'])
+def get_record(record_id):
+    """Get a specific extraction record"""
+    try:
+        record = db.get_extraction(record_id)
+        
+        if not record:
+            return jsonify({'error': 'Record not found'}), 404
+        
+        return jsonify({
+            'success': True,
+            'record': record.to_dict()
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@api.route('/records/<int:record_id>', methods=['DELETE'])
+def delete_record(record_id):
+    """Delete an extraction record"""
+    try:
+        success = db.delete_extraction(record_id)
+        
+        if not success:
+            return jsonify({'error': 'Record not found'}), 404
+        
+        return jsonify({
+            'success': True,
+            'message': 'Record deleted successfully'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@api.route('/export/<format>', methods=['POST'])
+def export_data(format):
+    """Export extraction data to specified format"""
+    try:
+        data = request.json.get('data', [])
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        if format == 'excel':
+            filepath = exporter.export_to_excel(data)
+        elif format == 'json':
+            filepath = exporter.export_to_json(data)
+        elif format == 'csv':
+            filepath = exporter.export_to_csv(data)
         else:
-            records = db.query(InsuranceRecord).all()
+            return jsonify({'error': 'Invalid format'}), 400
         
-        if not records:
-            raise HTTPException(status_code=404, detail="No records found")
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        if len(records) == 1:
-            # Single record export
-            data = records[0].to_dict()
-            
-            if request.format == "excel":
-                filename = f"insurance_{timestamp}.xlsx"
-                output_path = Path(settings.EXPORT_DIR) / filename
-                exporter.export_to_excel(data, str(output_path))
-            
-            elif request.format == "csv":
-                filename = f"insurance_{timestamp}.csv"
-                output_path = Path(settings.EXPORT_DIR) / filename
-                import csv
-                with open(output_path, 'w', newline='', encoding='utf-8') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(['Field', 'Value'])
-                    for k, v in data.items():
-                        writer.writerow([k, v if v else "N/A"])
-            
-            else:  # json
-                filename = f"insurance_{timestamp}.json"
-                output_path = Path(settings.EXPORT_DIR) / filename
-                import json
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=2, default=str)
-        
-        else:
-            # Batch export
-            data = [r.to_dict() for r in records]
-            
-            if request.format == "excel":
-                filename = f"insurance_batch_{timestamp}.xlsx"
-                output_path = Path(settings.EXPORT_DIR) / filename
-                exporter.export_batch_to_excel(data, str(output_path))
-            
-            elif request.format == "csv":
-                filename = f"insurance_batch_{timestamp}.csv"
-                output_path = Path(settings.EXPORT_DIR) / filename
-                import pandas as pd
-                df = pd.DataFrame(data)
-                df.to_csv(output_path, index=False)
-            
-            else:  # json
-                filename = f"insurance_batch_{timestamp}.json"
-                output_path = Path(settings.EXPORT_DIR) / filename
-                import json
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=2, default=str)
-        
-        return FileResponse(
-            path=str(output_path),
-            filename=filename,
-            media_type='application/octet-stream'
+        return send_file(
+            filepath,
+            as_attachment=True,
+            download_name=os.path.basename(filepath)
         )
         
     except Exception as e:
-        logger.error(f"Export failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return jsonify({'error': str(e)}), 500
 
+@api.route('/search', methods=['GET'])
+def search_records():
+    """Search extraction records"""
+    try:
+        search_params = {
+            'insurance_company': request.args.get('company'),
+            'policy_number': request.args.get('policy'),
+            'insurer_name': request.args.get('name')
+        }
+        
+        # Remove None values
+        search_params = {k: v for k, v in search_params.items() if v}
+        
+        records = db.search_extractions(**search_params)
+        
+        return jsonify({
+            'success': True,
+            'count': len(records),
+            'records': [record.to_dict() for record in records]
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-@router.get("/records")
-async def get_records(
-    skip: int = 0,
-    limit: int = 100,
-    needs_review: Optional[bool] = None,
-    company: Optional[str] = None,
-    db: Session = Depends(get_db)
-):
-    """Get list of processed records with optional filters."""
-    query = db.query(InsuranceRecord)
+@api.route('/companies', methods=['GET'])
+def get_supported_companies():
+    """Get list of supported insurance companies"""
+    companies = [
+        'State Farm', 'Allstate', 'Progressive', 'USAA', 'Nationwide',
+        'Travelers', 'Liberty Mutual', 'Farmers', 'GEICO', 'American Family',
+        'Erie', 'Amica', 'CSAA', 'Chubb', 'Hartford', 'Country Financial',
+        'Lemonade', 'Hanover'
+    ]
     
-    # Filter by review status
-    if needs_review is not None:
-        query = query.filter(InsuranceRecord.needs_review == (1 if needs_review else 0))
-    
-    # Filter by company
-    if company:
-        query = query.filter(InsuranceRecord.detected_company == company)
-    
-    # Order by most recent first
-    query = query.order_by(InsuranceRecord.upload_date.desc())
-    
-    # Pagination
-    records = query.offset(skip).limit(limit).all()
-    
-    return [r.to_dict() for r in records]
-
-
-@router.get("/records/{record_id}")
-async def get_record(record_id: int, db: Session = Depends(get_db)):
-    """Get specific record by ID."""
-    record = db.query(InsuranceRecord).filter(InsuranceRecord.id == record_id).first()
-    
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
-    
-    return record.to_dict()
-
-
-@router.put("/records/{record_id}")
-async def update_record(
-    record_id: int,
-    updated_data: dict,
-    db: Session = Depends(get_db)
-):
-    """Update a record (for human corrections)."""
-    record = db.query(InsuranceRecord).filter(InsuranceRecord.id == record_id).first()
-    
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
-    
-    # Update fields
-    for key, value in updated_data.items():
-        if hasattr(record, key) and key not in ['id', 'upload_date']:
-            setattr(record, key, value)
-    
-    # Mark as reviewed
-    record.needs_review = 0
-    
-    db.commit()
-    db.refresh(record)
-    
-    return {
-        "success": True,
-        "message": "Record updated successfully",
-        "record": record.to_dict()
-    }
-
-
-@router.delete("/records/{record_id}")
-async def delete_record(record_id: int, db: Session = Depends(get_db)):
-    """Delete a record."""
-    record = db.query(InsuranceRecord).filter(InsuranceRecord.id == record_id).first()
-    
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
-    
-    db.delete(record)
-    db.commit()
-    
-    return {
-        "success": True,
-        "message": "Record deleted successfully"
-    }
-
-
-@router.get("/stats")
-async def get_stats(db: Session = Depends(get_db)):
-    """Get statistics about processed records."""
-    total = db.query(InsuranceRecord).count()
-    needs_review = db.query(InsuranceRecord).filter(
-        InsuranceRecord.needs_review == 1
-    ).count()
-    
-    # Get company breakdown
-    from sqlalchemy import func
-    company_stats = db.query(
-        InsuranceRecord.detected_company,
-        func.count(InsuranceRecord.id).label('count')
-    ).group_by(InsuranceRecord.detected_company).all()
-    
-    # Get average confidence
-    avg_confidence = db.query(
-        func.avg(InsuranceRecord.confidence_score)
-    ).scalar() or 0
-    
-    # Get average processing time
-    avg_processing_time = db.query(
-        func.avg(InsuranceRecord.processing_time)
-    ).scalar() or 0
-    
-    return {
-        "total_records": total,
-        "needs_review": needs_review,
-        "auto_approved": total - needs_review,
-        "company_breakdown": {
-            company: count for company, count in company_stats
-        },
-        "average_confidence": round(avg_confidence, 2),
-        "average_processing_time": round(avg_processing_time, 2)
-    }
-
-
-@router.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "version": settings.APP_VERSION,
-        "timestamp": datetime.now().isoformat()
-    }
-
-
-@router.get("/companies")
-async def get_supported_companies():
-    """Get list of supported insurance companies."""
-    companies = list(TemplateManager.EXTRACTOR_MAP.keys())
-    companies.remove('generic')  # Don't show generic in list
-    
-    return {
-        "supported_companies": sorted(companies),
-        "total_count": len(companies),
-        "has_generic_fallback": True
-    }
-
-
-@router.post("/validate/{record_id}")
-async def validate_record(record_id: int, db: Session = Depends(get_db)):
-    """Manually trigger validation for a specific record."""
-    record = db.query(InsuranceRecord).filter(InsuranceRecord.id == record_id).first()
-    
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
-    
-    # Prepare data for validation
-    data = record.to_dict()
-    
-    # Run validation
-    validation_results = validator.validate_all(data)
-    
-    # Update needs_review flag if necessary
-    needs_review = validator.should_flag_for_review(data, validation_results)
-    
-    if record.needs_review != (1 if needs_review else 0):
-        record.needs_review = 1 if needs_review else 0
-        db.commit()
-    
-    return {
-        "record_id": record_id,
-        "validation_results": validation_results,
-        "needs_review": needs_review
-    }
-
-
-@router.post("/batch-upload")
-async def batch_upload(
-    files: List[UploadFile] = File(...),
-    db: Session = Depends(get_db)
-):
-    """Upload multiple files at once."""
-    results = []
-    
-    for file in files:
-        try:
-            # Process each file (reuse upload logic)
-            result = await upload_file(file, db)
-            results.append({
-                "filename": file.filename,
-                "success": True,
-                "record_id": result.record_id
-            })
-        except Exception as e:
-            results.append({
-                "filename": file.filename,
-                "success": False,
-                "error": str(e)
-            })
-    
-    successful = sum(1 for r in results if r['success'])
-    failed = len(results) - successful
-    
-    return {
-        "total": len(results),
-        "successful": successful,
-        "failed": failed,
-        "results": results
-    }
+    return jsonify({
+        'success': True,
+        'companies': companies
+    }), 200

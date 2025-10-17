@@ -1,48 +1,36 @@
 from extractors.base_extractor import BaseExtractor
 
 class StateFarmExtractor(BaseExtractor):
-    """State Farm specific patterns."""
+    """Extractor for State Farm insurance documents"""
     
-    def __init__(self):
-        super().__init__()
-        self.company_name = "State Farm"
+    def get_company_name(self):
+        return 'state_farm'
     
-    def get_patterns(self):
-        return {
-            'policy_number': [
-                r'Policy\s*(?:Number|#|No\.?)\s*:?\s*([A-Z0-9\-]+)',
-                r'Policy\s*ID\s*:?\s*([A-Z0-9\-]+)',
-            ],
-            'policyholder_name': [
-                r'Named\s*Insured\s*:?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
-                r'Insured\s*Name\s*:?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
-            ],
-            'property_address': [
-                r'Property\s*Address\s*:?\s*(.+?)(?:\n|,\s*[A-Z]{2}\s*\d{5})',
-                r'Insured\s*Location\s*:?\s*(.+?)(?:\n|$)',
-            ],
-            'coverage_amount': [
-                r'Personal\s*Property\s*:?\s*\$?\s*([\d,]+)',
-                r'Coverage\s*C\s*:?\s*\$?\s*([\d,]+)',
-            ],
-            'liability_coverage': [
-                r'Personal\s*Liability\s*:?\s*\$?\s*([\d,]+)',
-                r'Coverage\s*E\s*:?\s*\$?\s*([\d,]+)',
-            ],
-            'deductible': [
-                r'Deductible\s*:?\s*\$?\s*([\d,]+)',
-            ],
-            'effective_date': [
-                r'Effective\s*Date\s*:?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
-            ],
-            'expiration_date': [
-                r'Expiration\s*Date\s*:?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
-            ],
-            'premium_amount': [
-                r'Total\s*Premium\s*:?\s*\$?\s*([\d,]+\.?\d*)',
-                r'Annual\s*Premium\s*:?\s*\$?\s*([\d,]+\.?\d*)',
-            ],
-            'insurance_company': [
-                r'(State\s*Farm[^\n]*)',
-            ],
-        }
+    def extract_custom_fields(self, img):
+        """Extract State Farm-specific fields"""
+        custom_data = {}
+        
+        # State Farm specific fields
+        # Agent information
+        agent_coords = (420, 280, 200, 20)
+        try:
+            roi = self.processor.extract_roi(img, agent_coords)
+            processed = self.processor.preprocess_roi(roi)
+            text = self.ocr.extract_text(processed)
+            custom_data['agent_name'] = self.ocr.clean_name(text)
+        except Exception as e:
+            custom_data['agent_name'] = ''
+        
+        return custom_data
+    
+    def post_process(self, data):
+        """Post-process State Farm data"""
+        if 'insurance_company' in data:
+            data['insurance_company'] = 'State Farm'
+        
+        # State Farm policy numbers are typically numeric
+        if data.get('policy_number'):
+            policy = data['policy_number'].replace('-', '').replace(' ', '')
+            data['policy_number'] = policy
+        
+        return data

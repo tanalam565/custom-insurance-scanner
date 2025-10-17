@@ -9,113 +9,75 @@
 <body>
     <div class="container">
         <header>
-            <h1>🏠 Enterprise Renters Insurance Extractor</h1>
-            <p>Supports 18+ major US insurance companies with 95%+ accuracy</p>
-            <div class="stats">
-                <span id="totalRecords">Total: 0</span>
-                <span id="needsReview">Needs Review: 0</span>
-            </div>
+            <h1>🏠 Renters Insurance Data Extractor</h1>
+            <p class="subtitle">Extract data from insurance documents automatically</p>
         </header>
 
-        <div class="upload-section">
-            <form id="uploadForm">
-                <div class="file-input-wrapper">
-                    <input type="file" id="fileInput" 
-                           accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp" required>
-                    <label for="fileInput" id="fileLabel">
-                        <span class="icon">📄</span>
-                        <span id="fileName">Choose file or drag here</span>
-                        <span class="hint">PDF, PNG, JPG, TIFF (Max 20MB)</span>
-                    </label>
+        <div class="main-content">
+            <!-- Upload Section -->
+            <section class="upload-section">
+                <div class="upload-box" id="uploadBox">
+                    <div class="upload-icon">📄</div>
+                    <h3>Drop your insurance document here</h3>
+                    <p>or click to browse</p>
+                    <input type="file" id="fileInput" accept=".png,.jpg,.jpeg,.pdf,.tiff,.bmp" hidden>
+                    <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
+                        Choose File
+                    </button>
                 </div>
-                <button type="submit" id="submitBtn">Extract Data</button>
-            </form>
+                <div class="file-info" id="fileInfo" style="display: none;">
+                    <span id="fileName"></span>
+                    <button class="btn-secondary" onclick="clearFile()">Remove</button>
+                </div>
+            </section>
 
-            <div id="loading" class="loading hidden">
-                <div class="spinner"></div>
+            <!-- Processing Section -->
+            <section class="processing-section" id="processingSection" style="display: none;">
+                <div class="loader"></div>
                 <p>Processing document...</p>
-                <small>Detecting company and extracting data</small>
-            </div>
-        </div>
+            </section>
 
-        <div id="results" class="results hidden">
-            <div class="results-header">
-                <h2>Extracted Information</h2>
+            <!-- Results Section -->
+            <section class="results-section" id="resultsSection" style="display: none;">
+                <h2>Extraction Results</h2>
+                
                 <div class="company-badge" id="companyBadge"></div>
-                <div class="confidence-indicator" id="confidenceIndicator"></div>
-            </div>
+                <div class="confidence-score" id="confidenceScore"></div>
 
-            <div class="data-grid">
-                <div class="data-item">
-                    <label>Insurance Company:</label>
-                    <span id="insuranceCompany">-</span>
+                <div class="data-grid" id="dataGrid">
+                    <!-- Data will be inserted here -->
                 </div>
-                <div class="data-item">
-                    <label>Detected Company:</label>
-                    <span id="detectedCompany">-</span>
-                </div>
-                <div class="data-item">
-                    <label>Policy Number:</label>
-                    <span id="policyNumber">-</span>
-                </div>
-                <div class="data-item">
-                    <label>Policyholder Name:</label>
-                    <span id="policyholderName">-</span>
-                </div>
-                <div class="data-item">
-                    <label>Property Address:</label>
-                    <span id="propertyAddress">-</span>
-                </div>
-                <div class="data-item">
-                    <label>Coverage Amount:</label>
-                    <span id="coverageAmount">-</span>
-                </div>
-                <div class="data-item">
-                    <label>Liability Coverage:</label>
-                    <span id="liabilityCoverage">-</span>
-                </div>
-                <div class="data-item">
-                    <label>Deductible:</label>
-                    <span id="deductible">-</span>
-                </div>
-                <div class="data-item">
-                    <label>Effective Date:</label>
-                    <span id="effectiveDate">-</span>
-                </div>
-                <div class="data-item">
-                    <label>Expiration Date:</label>
-                    <span id="expirationDate">-</span>
-                </div>
-                <div class="data-item">
-                    <label>Premium Amount:</label>
-                    <span id="premiumAmount">-</span>
-                </div>
-                <div class="data-item">
-                    <label>Processing Time:</label>
-                    <span id="processingTime">-</span>
-                </div>
-            </div>
 
-            <div class="action-buttons">
-                <button onclick="exportData('excel')" class="btn-export">📊 Export Excel</button>
-                <button onclick="exportData('csv')" class="btn-export">📝 Export CSV</button>
-                <button onclick="exportData('json')" class="btn-export">📋 Export JSON</button>
-                <button id="resetBtn" class="btn-reset">Upload Another</button>
-            </div>
-        </div>
+                <div class="validation-messages" id="validationMessages">
+                    <!-- Validation messages will be inserted here -->
+                </div>
 
-        <div id="error" class="error hidden">
-            <p id="errorMessage"></p>
-            <button onclick="resetForm()">Try Again</button>
-        </div>
+                <div class="action-buttons">
+                    <button class="btn-success" onclick="exportData('excel')">
+                        📊 Export to Excel
+                    </button>
+                    <button class="btn-success" onclick="exportData('csv')">
+                        📋 Export to CSV
+                    </button>
+                    <button class="btn-success" onclick="exportData('json')">
+                        📁 Export to JSON
+                    </button>
+                    <button class="btn-primary" onclick="resetForm()">
+                        ➕ Process Another
+                    </button>
+                </div>
+            </section>
 
-        <div class="records-section">
-            <h3>Recent Extractions</h3>
-            <div class="filter-tabs">
-                <button class="tab active" onclick="loadRecords('all')">All</button>
-                <button class="tab" onclick="loadRecords('review')">Needs Review</button>
-            </div>
-            <div id="recordsList"></div>
+            <!-- History Section -->
+            <section class="history-section">
+                <div class="section-header">
+                    <h2>Recent Extractions</h2>
+                    <button class="btn-secondary" onclick="loadHistory()">🔄 Refresh</button>
+                </div>
+                <div class="history-list" id="historyList">
+                    <!-- History items will be inserted here -->
+                </div>
+            </section>
         </div>
     </div>
 

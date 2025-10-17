@@ -1,15 +1,40 @@
-"""
 version: '3.8'
 
 services:
   web:
     build: .
+    container_name: renters_extractor
     ports:
-      - "8000:8000"
+      - "5000:5000"
     volumes:
       - ./uploads:/app/uploads
       - ./exports:/app/exports
-      - ./insurance.db:/app/insurance.db
+      - ./renters_data.db:/app/renters_data.db
     environment:
-      - DATABASE_URL=sqlite:///./insurance.db
-"""
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - DEBUG=${DEBUG:-False}
+      - TESSERACT_CMD=/usr/bin/tesseract
+      - DATABASE_URL=sqlite:///renters_data.db
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # Optional: Add PostgreSQL database
+  # db:
+  #   image: postgres:15-alpine
+  #   container_name: renters_db
+  #   environment:
+  #     POSTGRES_DB: renters_db
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
