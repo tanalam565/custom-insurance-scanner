@@ -1,21 +1,19 @@
+"""
+Flask API routes
+"""
 from flask import Blueprint, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 import os
 import time
 from pathlib import Path
-import importlib
 
-from core.image_processor import ImageProcessor
-from core.company_detector import CompanyDetector
+from core.simple_extractor import extract_from_image, get_available_companies
 from core.exporter import Exporter
 from models.database import Database
 from config import Config
 
 api = Blueprint('api', __name__)
 
-# Initialize components
-processor = ImageProcessor()
-detector = CompanyDetector()
 exporter = Exporter()
 db = Database()
 
@@ -24,25 +22,6 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
 
-def get_extractor(company_name):
-    """Dynamically import and instantiate the correct extractor"""
-    try:
-        # Convert company_name to class name
-        parts = company_name.split('_')
-        class_name = ''.join(word.capitalize() for word in parts) + 'Extractor'
-        
-        # Import the module
-        module_name = f'extractors.{company_name}_extractor'
-        module = importlib.import_module(module_name)
-        
-        # Get the class and instantiate
-        extractor_class = getattr(module, class_name)
-        return extractor_class()
-    except Exception as e:
-        print(f"Error loading extractor for {company_name}: {e}")
-        # Fall back to generic extractor
-        from extractors.generic_extractor import GenericExtractor
-        return GenericExtractor()
 
 @api.route('/upload', methods=['POST'])
 def upload_file():
@@ -59,6 +38,16 @@ def upload_file():
     if not allowed_file(file.filename):
         return jsonify({'error': 'Invalid file type'}), 400
     
+    # Get company name from request
+    company_name = request.form.get('company', 'nationwide')
+    
+    # Validate company
+    if company_name not in get_available_companies():
+        return jsonify({
+            'error': f'Unknown company: {company_name}',
+            'available_companies': get_available_companies()
+        }), 400
+    
     try:
         # Save uploaded file
         filename = secure_filename(file.filename)
@@ -68,32 +57,25 @@ def upload_file():
         # Start timing
         start_time = time.time()
         
-        # Load and process image
-        img = processor.load_image(filepath)
-        
-        # Detect company
-        company_name, confidence = detector.detect_company(img)
-        
-        # Get appropriate extractor
-        extractor = get_extractor(company_name)
-        
-        # Extract data
-        extracted_data = extractor.extract_all_fields(img)
-        
-        # Post-process
-        extracted_data = extractor.post_process(extracted_data)
-        
-        # Validate
-        is_valid, errors = extractor.validate_extraction(extracted_data)
+        # Extract data - NO detection, just use specified company
+        extracted_data = extract_from_image(filepath, company_name)
         
         # Calculate processing time
         processing_time = time.time() - start_time
         
+        # Validate - check if we got some data
+        required_fields = ['policy_number', 'insurer_name']
+        is_valid = any(extracted_data.get(field) for field in required_fields)
+        errors = []
+        
+        if not is_valid:
+            errors.append("Could not extract required fields. Check if coordinates are correct for this company.")
+        
         # Prepare database record
         db_data = {
             'filename': filename,
-            'insurance_company': extracted_data.get('insurance_company', company_name),
-            'company_confidence': confidence,
+            'insurance_company': company_name,
+            'company_confidence': 1.0,  # No detection, user specified
             'policy_number': extracted_data.get('policy_number', ''),
             'date_prepared': extracted_data.get('date_prepared', ''),
             'effective_date': extracted_data.get('effective_date', ''),
@@ -116,7 +98,6 @@ def upload_file():
             'success': True,
             'record_id': record_id,
             'company': company_name,
-            'confidence': confidence,
             'data': extracted_data,
             'is_valid': is_valid,
             'validation_errors': errors,
@@ -126,7 +107,24 @@ def upload_file():
         return jsonify(response), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error during extraction:\n{error_details}")
+        return jsonify({
+            'error': str(e),
+            'details': 'Check console for full error details'
+        }), 500
+
+
+@api.route('/companies', methods=['GET'])
+def get_companies():
+    """Get list of available insurance companies"""
+    companies = get_available_companies()
+    return jsonify({
+        'success': True,
+        'companies': companies
+    }), 200
+
 
 @api.route('/records', methods=['GET'])
 def get_records():
@@ -146,6 +144,7 @@ def get_records():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
 @api.route('/records/<int:record_id>', methods=['GET'])
 def get_record(record_id):
     """Get a specific extraction record"""
@@ -162,6 +161,7 @@ def get_record(record_id):
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 @api.route('/records/<int:record_id>', methods=['DELETE'])
 def delete_record(record_id):
@@ -180,9 +180,10 @@ def delete_record(record_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
 @api.route('/export/<format>', methods=['POST'])
 def export_data(format):
-    """Export extraction data to specified format"""
+    """Export extraction data"""
     try:
         data = request.json.get('data', [])
         
@@ -206,42 +207,3 @@ def export_data(format):
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-@api.route('/search', methods=['GET'])
-def search_records():
-    """Search extraction records"""
-    try:
-        search_params = {
-            'insurance_company': request.args.get('company'),
-            'policy_number': request.args.get('policy'),
-            'insurer_name': request.args.get('name')
-        }
-        
-        # Remove None values
-        search_params = {k: v for k, v in search_params.items() if v}
-        
-        records = db.search_extractions(**search_params)
-        
-        return jsonify({
-            'success': True,
-            'count': len(records),
-            'records': [record.to_dict() for record in records]
-        }), 200
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@api.route('/companies', methods=['GET'])
-def get_supported_companies():
-    """Get list of supported insurance companies"""
-    companies = [
-        'State Farm', 'Allstate', 'Progressive', 'USAA', 'Nationwide',
-        'Travelers', 'Liberty Mutual', 'Farmers', 'GEICO', 'American Family',
-        'Erie', 'Amica', 'CSAA', 'Chubb', 'Hartford', 'Country Financial',
-        'Lemonade', 'Hanover'
-    ]
-    
-    return jsonify({
-        'success': True,
-        'companies': companies
-    }), 200

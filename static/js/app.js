@@ -21,7 +21,11 @@ function setupEventListeners() {
     uploadBox.addEventListener('drop', handleDrop);
     
     // Click to upload
-    uploadBox.addEventListener('click', () => fileInput.click());
+    uploadBox.addEventListener('click', (e) => {
+        if (e.target === uploadBox || e.target.closest('.upload-box')) {
+            fileInput.click();
+        }
+    });
 }
 
 function handleFileSelect(e) {
@@ -71,6 +75,10 @@ async function uploadFile(file) {
     const formData = new FormData();
     formData.append('file', file);
     
+    // Get selected company
+    const company = document.getElementById('companySelect').value;
+    formData.append('company', company);
+    
     // Show processing
     document.getElementById('processingSection').style.display = 'block';
     document.getElementById('resultsSection').style.display = 'none';
@@ -90,7 +98,7 @@ async function uploadFile(file) {
             currentData = result.data;
             currentRecordId = result.record_id;
             displayResults(result);
-            loadHistory(); // Refresh history
+            loadHistory();
         } else {
             showError(result.error || 'Upload failed');
         }
@@ -107,27 +115,20 @@ function displayResults(result) {
     
     // Company badge
     const companyBadge = document.getElementById('companyBadge');
-    companyBadge.textContent = result.data.insurance_company || result.company;
-    
-    // Confidence score
-    const confidenceScore = document.getElementById('confidenceScore');
-    const confidence = (result.confidence * 100).toFixed(1);
-    confidenceScore.textContent = `${confidence}% confidence`;
+    companyBadge.textContent = result.company.replace('_', ' ').toUpperCase();
     
     // Data grid
     const dataGrid = document.getElementById('dataGrid');
     dataGrid.innerHTML = '';
     
     const fields = [
+        { key: 'insurance_company', label: 'Insurance Company' },
         { key: 'policy_number', label: 'Policy Number' },
         { key: 'date_prepared', label: 'Date Prepared' },
         { key: 'insurer_name', label: 'Insurer Name' },
         { key: 'insurer_address', label: 'Insurer Address' },
         { key: 'insurer_city_state', label: 'City, State' },
-        { key: 'property_address', label: 'Property Address' },
         { key: 'insurance_amount', label: 'Insurance Amount' },
-        { key: 'effective_date', label: 'Effective Date' },
-        { key: 'expiration_date', label: 'Expiration Date' }
     ];
     
     fields.forEach(field => {
@@ -148,7 +149,7 @@ function displayResults(result) {
     if (result.is_valid) {
         validationMessages.innerHTML = `
             <div class="validation-success">
-                ✓ All required fields extracted successfully
+                ✓ Data extracted successfully
             </div>
         `;
     } else {
@@ -258,7 +259,6 @@ async function viewRecord(recordId) {
             const displayResult = {
                 success: true,
                 company: result.record.insurance_company,
-                confidence: result.record.company_confidence || 0.8,
                 data: result.record,
                 is_valid: result.record.extraction_status === 'success',
                 validation_errors: result.record.error_message ? 
@@ -286,7 +286,7 @@ async function deleteRecord(recordId) {
         const result = await response.json();
         
         if (result.success) {
-            loadHistory(); // Refresh history
+            loadHistory();
             if (currentRecordId === recordId) {
                 resetForm();
             }

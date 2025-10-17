@@ -10,12 +10,28 @@
     <div class="container">
         <header>
             <h1>🏠 Renters Insurance Data Extractor</h1>
-            <p class="subtitle">Extract data from insurance documents automatically</p>
+            <p class="subtitle">Extract data from insurance documents</p>
         </header>
 
         <div class="main-content">
             <!-- Upload Section -->
             <section class="upload-section">
+                <!-- Company Selector -->
+                <div class="company-selector">
+                    <label for="companySelect"><strong>Select Insurance Company:</strong></label>
+                    <select id="companySelect" class="company-dropdown">
+                        <option value="nationwide">Nationwide</option>
+                        <option value="state_farm">State Farm</option>
+                        <option value="allstate">Allstate</option>
+                        <option value="progressive">Progressive</option>
+                        <option value="usaa">USAA</option>
+                        <option value="geico">GEICO</option>
+                        <option value="travelers">Travelers</option>
+                        <option value="liberty_mutual">Liberty Mutual</option>
+                        <option value="farmers">Farmers</option>
+                    </select>
+                </div>
+
                 <div class="upload-box" id="uploadBox">
                     <div class="upload-icon">📄</div>
                     <h3>Drop your insurance document here</h3>
@@ -42,7 +58,6 @@
                 <h2>Extraction Results</h2>
                 
                 <div class="company-badge" id="companyBadge"></div>
-                <div class="confidence-score" id="confidenceScore"></div>
 
                 <div class="data-grid" id="dataGrid">
                     <!-- Data will be inserted here -->
