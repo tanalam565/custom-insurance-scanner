@@ -1,5 +1,5 @@
 # custom-insurance-scanner
-It extracts insurance data using exact coordinates within the documents, saving huge costs from using document intelligence in cloud services.
+It extracts insurance data using texts as keywords and patterns within the documents, saving huge costs from using document intelligence in cloud services.
 
 """
 # Enterprise Renters Insurance Data Extraction System
